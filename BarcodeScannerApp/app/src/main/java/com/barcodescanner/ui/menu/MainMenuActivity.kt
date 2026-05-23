@@ -63,6 +63,9 @@ class MainMenuActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main_menu)
 
+        // 初始化 ServerConfig
+        ServerConfig.init(this)
+
         userId = intent.getIntExtra("user_id", ServerConfig.getUserId())
         userName = intent.getStringExtra("user_name") ?: ServerConfig.getUserName()
         isOffline = intent.getBooleanExtra("is_offline", false)
@@ -265,10 +268,10 @@ class MainMenuActivity : AppCompatActivity() {
 
                 ApiClient.mergeToServer(usersArr, recordsArr, deviceId, userName, object : ApiClient.ApiCallback {
                     override fun onSuccess(data: org.json.JSONObject?) {
-                        val added = data?.optInt("added", 0) ?: 0
-                        val skipped = data?.optInt("skipped", 0) ?: 0
+                        val added = data?.optInt("records_created", 0) ?: 0
+                        val duplicates = data?.optInt("duplicates", 0) ?: 0
                         runOnUiThread {
-                            Toast.makeText(this@MainMenuActivity, "✅ 上传完成（新增 $added，跳过 $skipped）", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainMenuActivity, "✅ 上传完成（新增 $added，重复 $duplicates）", Toast.LENGTH_SHORT).show()
                         }
                     }
                     override fun onError(error: String?) {
