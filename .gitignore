@@ -14,6 +14,10 @@ BarcodeScannerApp/build/
 BarcodeScannerApp/app/build/
 BarcodeScannerApp/local.properties
 BarcodeScannerApp/app-debug.apk
+.gradle/
+build/
+local.properties
+*.apk
 
 # IDE
 .idea/
@@ -39,3 +43,6 @@ BarcodeServer/build/
 BarcodeServer/dist/
 BarcodeServer/*.spec
 BarcodeServer/exports/*.json
+
+# SysMonitor
+SysMonitor/__pycache__/
