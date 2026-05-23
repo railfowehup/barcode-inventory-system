@@ -33,3 +33,9 @@ Thumbs.db
 
 # Node
 node_modules/
+
+# BarcodeServer Build
+BarcodeServer/build/
+BarcodeServer/dist/
+BarcodeServer/*.spec
+BarcodeServer/exports/*.json
