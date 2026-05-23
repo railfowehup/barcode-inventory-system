@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+*.egg
+.venv/
+venv/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Node
+node_modules/
+
+# BarcodeServer Build
+BarcodeServer/build/
+BarcodeServer/*.spec
+BarcodeServer/exports/*.json
+
+# SysMonitor
+SysMonitor/__pycache__/
