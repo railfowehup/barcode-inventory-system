@@ -1,0 +1,6 @@
+{
+  "appId": "com.barcodescanner.mobile",
+  "appName": "包裹手机",
+  "webDir": "public",
+  "bundledWebRuntime": false
+}

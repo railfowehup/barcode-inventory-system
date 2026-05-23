@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+*.egg
+.venv/
+venv/
+
+# Android / Gradle
+BarcodeScannerApp/.gradle/
+BarcodeScannerApp/build/
+BarcodeScannerApp/app/build/
+BarcodeScannerApp/local.properties
+BarcodeScannerApp/app-debug.apk
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Node
+node_modules/

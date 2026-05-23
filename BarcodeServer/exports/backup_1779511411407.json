@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "backup_time": "2026-05-23T12:43:31.407074",
+  "users": [
+    {
+      "id": 1,
+      "name": "热合曼",
+      "theme_color": "#2196F3",
+      "role": "operator",
+      "created_at": "2026-05-23 04:43:11"
+    }
+  ],
+  "records": [
+    {
+      "id": 1,
+      "barcode": "9787576516913",
+      "user_id": 1,
+      "status": "入库",
+      "address": "北京",
+      "weight": 13.0,
+      "device_id": "",
+      "note": "",
+      "recipient": "",
+      "logistics_no": "",
+      "signer": "",
+      "sign_time": null,
+      "sign_photo": "",
+      "exception_type": "",
+      "is_duplicate": 0,
+      "is_merged": 0,
+      "address_history": "[]",
+      "created_at": "2026-05-23 04:43:16",
+      "sort_at": null
+    }
+  ],
+  "sync_logs": []
+}
