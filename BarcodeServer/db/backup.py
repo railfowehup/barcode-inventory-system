@@ -49,7 +49,8 @@ def restore(db: Database, data):
                 (r.get('barcode', ''), r.get('user_id', 1), r.get('status', '入库'),
                  r.get('address', ''), r.get('weight', 0), r.get('device_id', ''),
                  r.get('note', ''), r.get('recipient', ''), r.get('logistics_no', ''),
-                 r.get('signer', ''), r.get('sign_time'), r.get('exception_type', ''),
+                 r.get('signer', ''), r.get('sign_time') if r.get('sign_time') else None, r.get('exception_type', ''),
+
                  r.get('is_duplicate', 0), r.get('created_at'), r.get('sort_at'))
             )
             records_restored += 1

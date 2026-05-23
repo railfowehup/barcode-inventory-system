@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 """管理 Flask 服务器进程"""
+import sys
+import os
 import threading
 import time
 from . import SERVER_PORT, get_local_ips
+
+# 修正：使用 sys.path 添加父目录，使 from api import app 能正常工作
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class ServerManager:
@@ -57,5 +62,5 @@ class ServerManager:
         if self.is_running():
             ips = get_local_ips()
             ip = ips[0] if ips else 'localhost'
-            return f"🟢 运行中 | http://{ip}:{SERVER_PORT}"
-        return "🔴 已停止"
+            return f"[ON] 运行中 | http://{ip}:{SERVER_PORT}"
+        return "[OFF] 已停止"

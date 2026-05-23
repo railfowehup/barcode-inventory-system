@@ -29,7 +29,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.barcodescanner.R
-import com.barcodescanner.network.ApiClient
+import com.barcodescanner.ApiClient
 import com.barcodescanner.network.ServerConfig
 import com.barcodescanner.ui.theme.AppTheme
 import com.barcodescanner.utils.NetworkUtils
@@ -61,7 +61,8 @@ abstract class BaseScannerActivity : AppCompatActivity() {
     companion object {
         private const val CAMERA_PERMISSION_CODE = 100
         private const val DEDUP_INTERVAL_MS = 800L
-        private const val AUTO_FLASH_THRESHOLD = 45
+        private const val AUTO_FLASH_THRESHOLD = 15
+
         private const val AUTO_FLASH_DEBOUNCE_MS = 2000L
     }
 
@@ -103,7 +104,8 @@ abstract class BaseScannerActivity : AppCompatActivity() {
 
     // ==================== 心跳 ====================
     private val heartbeatHandler = Handler(Looper.getMainLooper())
-    private val heartbeatInterval = 15000L
+    private val heartbeatInterval = 60000L
+
     private var isHeartbeatRunning = false
 
     // ==================== 抽象方法 ====================

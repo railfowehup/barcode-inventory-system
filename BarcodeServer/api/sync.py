@@ -1,44 +1,25 @@
 # -*- coding: utf-8 -*-
-"""同步/合并相关 API"""
+"""
+同步/合并相关 API
+
+=== 版本说明 ===
+推荐使用新版增量同步 API:
+  - /api/sync/push  (增量推送)
+  - /api/sync/pull  (增量拉取)
+  - /api/sync/status (同步状态)
+
+旧版全量同步（保留兼容，标记弃用）:
+  - /api/merge
+  - /api/pull
+"""
 from flask import request, jsonify
-from . import app, db, notify_update, now_str
+from . import app, db, notify_update, now_str, ok_response, err_response
 from db import sync as db_sync
 from db import records as db_records
 from db import users as db_users
 
 
-@app.route('/api/merge', methods=['POST'])
-def api_merge():
-    data = request.get_json()
-    if not data or not data.get('records'):
-        return jsonify({'error': '缺少数据'}), 400
-
-    result = db_sync.merge_data(db,
-        users_data=data.get('users'),
-        records_data=data['records'],
-        device_id=data.get('device_id', ''),
-        user_name=data.get('user_name', '')
-    )
-    return jsonify({'success': True, **result})
-
-
-@app.route('/api/pull', methods=['POST'])
-def api_pull():
-    data = request.get_json() or {}
-    users, records = db_sync.pull_data(db, since=data.get('since'))
-    return jsonify({
-        'success': True,
-        'users': users,
-        'records': records,
-        'total_records': len(records)
-    })
-
-
-@app.route('/api/sync-logs', methods=['GET'])
-def api_sync_logs():
-    logs = db_sync.get_sync_logs(db)
-    return jsonify(logs)
-
+# ==================== 新版增量同步 API ====================
 
 @app.route('/api/sync/push', methods=['POST'])
 def api_sync_push():
@@ -50,7 +31,7 @@ def api_sync_push():
         user_name = data.get('user_name', '')
 
         if not records:
-            return jsonify({'success': True, 'inserted': 0, 'updated': 0, 'conflicts': 0})
+            return ok_response({'inserted': 0, 'updated': 0, 'conflicts': 0})
 
         inserted = 0
         updated = 0
@@ -95,15 +76,14 @@ def api_sync_push():
         if inserted > 0 or updated > 0:
             notify_update('sync_push', {'inserted': inserted, 'updated': updated})
 
-        return jsonify({
-            'success': True,
+        return ok_response({
             'inserted': inserted,
             'updated': updated,
             'conflicts': conflicts,
             'conflict_count': len(conflicts)
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return err_response(str(e), 'ERR_DB_ERROR', 500)
 
 
 @app.route('/api/sync/pull', methods=['POST'])
@@ -113,26 +93,60 @@ def api_sync_pull():
         data = request.get_json() or {}
         since = data.get('since')
         users, records = db_sync.pull_data(db, since=since)
-        return jsonify({
-            'success': True,
+        return ok_response({
             'users': users,
             'records': records,
             'total_records': len(records),
             'server_time': now_str()
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return err_response(str(e), 'ERR_DB_ERROR', 500)
 
 
 @app.route('/api/sync/status', methods=['GET'])
 def api_sync_status():
     try:
         stats = db_records.get_stats(db)
-        return jsonify({
-            'success': True,
+        return ok_response({
             'total_records': stats.get('total', 0),
             'server_time': now_str(),
             'device_id': request.args.get('device_id', '')
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return err_response(str(e), 'ERR_DB_ERROR', 500)
+
+
+# ==================== 旧版全量同步（保留兼容，标记弃用） ====================
+
+@app.route('/api/merge', methods=['POST'])
+def api_merge():
+    """[弃用] 旧版全量合并 - 请改用 /api/sync/push"""
+    data = request.get_json()
+    if not data or not data.get('records'):
+        return err_response('缺少数据', 'ERR_MISSING_PARAM', 400)
+
+    result = db_sync.merge_data(db,
+        users_data=data.get('users'),
+        records_data=data['records'],
+        device_id=data.get('device_id', ''),
+        user_name=data.get('user_name', '')
+    )
+    return ok_response(result)
+
+
+@app.route('/api/pull', methods=['POST'])
+def api_pull():
+    """[弃用] 旧版全量拉取 - 请改用 /api/sync/pull"""
+    data = request.get_json() or {}
+    users, records = db_sync.pull_data(db, since=data.get('since'))
+    return ok_response({
+        'users': users,
+        'records': records,
+        'total_records': len(records)
+    })
+
+
+@app.route('/api/sync-logs', methods=['GET'])
+def api_sync_logs():
+    logs = db_sync.get_sync_logs(db)
+    return ok_response({'sync_logs': logs})

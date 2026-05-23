@@ -4,23 +4,20 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.appcompat.app.AppCompatActivity
+import com.barcodescanner.network.ServerConfig
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,12 +30,13 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var serverUrlInput: EditText
     private lateinit var nameInput: EditText
-    private lateinit var loginBtn: Button
-    private lateinit var scanQrBtn: Button
-    private lateinit var offlineBtn: Button
-    private lateinit var startServerBtn: Button
-    private lateinit var syncBtn: Button
-    private lateinit var backupBtn: Button
+    private lateinit var loginBtn: CardView
+    private lateinit var scanQrBtn: CardView
+    private lateinit var offlineBtn: CardView
+    private lateinit var startServerBtn: CardView
+    private lateinit var stopServerBtn: CardView
+    private lateinit var syncBtn: CardView
+    private lateinit var backupBtn: CardView
     private lateinit var statusText: TextView
     private lateinit var deviceIdText: TextView
     private lateinit var serverStatusText: TextView
@@ -59,6 +57,7 @@ class LoginActivity : AppCompatActivity() {
         scanQrBtn = findViewById(R.id.scanQrBtn)
         offlineBtn = findViewById(R.id.offlineBtn)
         startServerBtn = findViewById(R.id.startServerBtn)
+        stopServerBtn = findViewById(R.id.stopServerBtn)
         syncBtn = findViewById(R.id.syncBtn)
         backupBtn = findViewById(R.id.backupBtn)
         statusText = findViewById(R.id.statusText)
@@ -89,6 +88,7 @@ class LoginActivity : AppCompatActivity() {
         scanQrBtn.setOnClickListener { startQrCodeScanner() }
         offlineBtn.setOnClickListener { enterOfflineMode() }
         startServerBtn.setOnClickListener { startServer() }
+        stopServerBtn.setOnClickListener { stopServer() }
         syncBtn.setOnClickListener { showSyncDialog() }
         backupBtn.setOnClickListener { showBackupDialog() }
 
@@ -108,15 +108,16 @@ class LoginActivity : AppCompatActivity() {
     private fun updateServerStatus() {
         if (EmbeddedServer.isServerRunning()) {
             val ip = EmbeddedServer.getLocalIpAddress()
-            startServerBtn.text = "✅ 服务器运行中"
-            startServerBtn.isEnabled = false
-            startServerBtn.backgroundTintList = android.content.res.ColorStateList.valueOf(
-                android.graphics.Color.parseColor("#666666")
-            )
+            // 隐藏启动按钮，显示停止按钮
+            startServerBtn.visibility = View.GONE
+            stopServerBtn.visibility = View.VISIBLE
             serverStatusText.text = "服务器地址: http://$ip:3000"
             serverStatusText.visibility = View.VISIBLE
             // 自动填入服务器地址
             serverUrlInput.setText("http://$ip:3000")
+        } else {
+            startServerBtn.visibility = View.VISIBLE
+            stopServerBtn.visibility = View.GONE
         }
     }
 
@@ -146,7 +147,12 @@ class LoginActivity : AppCompatActivity() {
 
         // 等待服务器启动
         startServerBtn.isEnabled = false
-        startServerBtn.text = "⏳ 启动中..."
+        val textView = startServerBtn.getChildAt(0)?.let {
+            if (it is android.widget.LinearLayout) {
+                it.getChildAt(1) as? TextView
+            } else null
+        }
+        textView?.text = "⏳ 启动中..."
         serverStatusText.visibility = View.VISIBLE
         serverStatusText.text = "正在启动服务器..."
 
@@ -154,20 +160,54 @@ class LoginActivity : AppCompatActivity() {
         android.os.Handler(mainLooper).postDelayed({
             if (EmbeddedServer.isServerRunning()) {
                 val ip = EmbeddedServer.getLocalIpAddress()
-                startServerBtn.text = "✅ 服务器运行中"
+                // 隐藏启动按钮，显示停止按钮
+                startServerBtn.visibility = View.GONE
+                stopServerBtn.visibility = View.VISIBLE
                 serverStatusText.text = "服务器地址: http://$ip:3000"
+                serverStatusText.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
                 serverUrlInput.setText("http://$ip:3000")
                 Toast.makeText(this, "服务器已启动: http://$ip:3000", Toast.LENGTH_LONG).show()
                 // 生成二维码
                 generateServerQrCode()
             } else {
                 startServerBtn.isEnabled = true
-                startServerBtn.text = "📡 启动手机服务器"
+                textView?.text = "📡 启动手机服务器"
+                startServerBtn.setCardBackgroundColor(android.graphics.Color.parseColor("#4CAF50"))
                 serverStatusText.text = "启动失败，请重试"
                 serverStatusText.setTextColor(android.graphics.Color.parseColor("#FF5252"))
             }
         }, 2000)
 
+    }
+
+    /**
+     * 停止手机服务器
+     */
+    private fun stopServer() {
+        AlertDialog.Builder(this)
+            .setTitle("确认停止服务器")
+            .setMessage("停止服务器后，其他设备将无法连接到此手机。确定要停止吗？")
+            .setPositiveButton("确认停止") { _, _ ->
+                // 停止服务
+                val intent = Intent(this, EmbeddedServer::class.java)
+                stopService(intent)
+                // 重置 UI
+                startServerBtn.visibility = View.VISIBLE
+                startServerBtn.isEnabled = true
+                val textView = startServerBtn.getChildAt(0)?.let {
+                    if (it is android.widget.LinearLayout) {
+                        it.getChildAt(1) as? TextView
+                    } else null
+                }
+                textView?.text = "📡 启动手机服务器"
+                startServerBtn.setCardBackgroundColor(android.graphics.Color.parseColor("#4CAF50"))
+                stopServerBtn.visibility = View.GONE
+                serverStatusText.visibility = View.GONE
+                serverQrImage.visibility = View.GONE
+                showStatus("✅ 服务器已停止")
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -210,54 +250,68 @@ class LoginActivity : AppCompatActivity() {
         }
         ApiClient.setServerUrl(serverUrl)
 
-        showStatus("正在上传数据到服务器...")
+        showStatus("正在上传本机数据...")
         syncBtn.isEnabled = false
 
-        // 从本机服务器拉取数据
-        if (EmbeddedServer.isServerRunning()) {
-            ApiClient.pullFromServer("all", null, object : ApiClient.ApiCallback {
-                override fun onSuccess(data: JSONObject?) {
-                    try {
-                        val users = data?.optJSONArray("users") ?: JSONArray()
-                        val records = data?.optJSONArray("records") ?: JSONArray()
+        // 从本机 SQLite 读取所有记录，上传到远程服务器
+        Thread {
+            try {
+                val db = EmbeddedDatabase(this)
+                val localRecords = db.getAllRecords()
+                val localUsers = db.getAllUsers()
 
-                        // 上传到目标服务器
-                        val deviceId = getMyDeviceId()
-                        val userName = nameInput.text.toString().trim()
-                        ApiClient.mergeToServer(users, records, deviceId, userName, object : ApiClient.ApiCallback {
-                            override fun onSuccess(data: JSONObject?) {
-                                runOnUiThread {
-                                    showStatus("✅ 同步完成")
-                                    syncBtn.isEnabled = true
-                                }
-                            }
+                val usersArr = org.json.JSONArray()
+                for (u in localUsers) {
+                    val obj = org.json.JSONObject()
+                    obj.put("id", u["id"] as? Int ?: 0)
+                    obj.put("name", u["name"] as? String ?: "")
+                    obj.put("theme_color", u["theme_color"] as? String ?: "#2196F3")
+                    obj.put("role", u["role"] as? String ?: "operator")
+                    usersArr.put(obj)
+                }
 
-                            override fun onError(error: String?) {
-                                runOnUiThread {
-                                    showStatus("同步失败: $error")
-                                    syncBtn.isEnabled = true
-                                }
-                            }
-                        })
-                    } catch (e: Exception) {
+                val recordsArr = org.json.JSONArray()
+                for (r in localRecords) {
+                    val obj = org.json.JSONObject()
+                    for ((key, value) in r) {
+                        @Suppress("UNCHECKED_CAST")
+                        val v: Any? = value
+                        when (v) {
+                            is Int -> obj.put(key, v)
+                            is Long -> obj.put(key, v)
+                            is Double -> obj.put(key, v)
+                            is Boolean -> obj.put(key, v)
+                            else -> obj.put(key, v?.toString() ?: "")
+                        }
+                    }
+                    recordsArr.put(obj)
+                }
+
+                val deviceId = getMyDeviceId()
+                val userName = nameInput.text.toString().trim()
+                ApiClient.mergeToServer(usersArr, recordsArr, deviceId, userName, object : ApiClient.ApiCallback {
+                    override fun onSuccess(data: org.json.JSONObject?) {
+                        val added = data?.optInt("added", 0) ?: 0
+                        val skipped = data?.optInt("skipped", 0) ?: 0
                         runOnUiThread {
-                            showStatus("解析数据失败: ${e.message}")
+                            showStatus("✅ 上传完成（新增 $added，跳过 $skipped）")
                             syncBtn.isEnabled = true
                         }
                     }
-                }
-
-                override fun onError(error: String?) {
-                    runOnUiThread {
-                        showStatus("拉取本机数据失败: $error")
-                        syncBtn.isEnabled = true
+                    override fun onError(error: String?) {
+                        runOnUiThread {
+                            showStatus("上传失败: $error")
+                            syncBtn.isEnabled = true
+                        }
                     }
+                })
+            } catch (e: Exception) {
+                runOnUiThread {
+                    showStatus("读取本机数据失败: ${e.message}")
+                    syncBtn.isEnabled = true
                 }
-            })
-        } else {
-            showStatus("请先启动本机服务器")
-            syncBtn.isEnabled = true
-        }
+            }
+        }.start()
     }
 
     /**
@@ -271,15 +325,68 @@ class LoginActivity : AppCompatActivity() {
         }
         ApiClient.setServerUrl(serverUrl)
 
-        showStatus("正在从服务器拉取数据...")
+        showStatus("正在拉取数据到本机...")
         syncBtn.isEnabled = false
 
         ApiClient.pullFromServer("all", null, object : ApiClient.ApiCallback {
             override fun onSuccess(data: JSONObject?) {
-                runOnUiThread {
-                    val total = data?.optInt("total_records", 0) ?: 0
-                    showStatus("✅ 拉取完成，共 $total 条记录")
-                    syncBtn.isEnabled = true
+                try {
+                    val records = data?.optJSONArray("records") ?: JSONArray()
+                    val users = data?.optJSONArray("users") ?: JSONArray()
+
+                    // 保存到本机 SQLite
+                    Thread {
+                        try {
+                            val db = EmbeddedDatabase(this@LoginActivity)
+                            var added = 0
+                            var skipped = 0
+
+                            // 先保存用户
+                            for (i in 0 until users.length()) {
+                                val u = users.getJSONObject(i)
+                                val name = u.optString("name", "")
+                                if (name.isNotEmpty()) {
+                                    db.loginUser(name)
+                                }
+                            }
+
+                            // 再保存记录
+                            for (i in 0 until records.length()) {
+                                val r = records.getJSONObject(i)
+                                val barcode = r.optString("barcode", "")
+                                if (barcode.isEmpty()) continue
+
+                                val existing = db.findRecordByBarcode(barcode)
+                                if (existing == null) {
+                                    val userId = r.optInt("user_id", 0)
+                                    val address = r.optString("address", "")
+                                    val weight = r.optDouble("weight", 0.0)
+                                    val note = r.optString("note", "")
+                                    db.insertRecord(barcode, userId, address, weight, note)
+                                    added++
+                                } else {
+                                    skipped++
+                                }
+                            }
+
+                            val finalAdded = added
+                            val finalSkipped = skipped
+                            runOnUiThread {
+                                showStatus("✅ 拉取完成（新增 $finalAdded，跳过 $finalSkipped）")
+                                syncBtn.isEnabled = true
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                showStatus("保存到本机失败: ${e.message}")
+                                syncBtn.isEnabled = true
+                            }
+                        }
+                    }.start()
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        showStatus("解析数据失败: ${e.message}")
+                        syncBtn.isEnabled = true
+                    }
                 }
             }
 
@@ -413,13 +520,14 @@ class LoginActivity : AppCompatActivity() {
      */
     private fun startQrCodeScanner() {
         val intent = Intent(this, QrCodeScannerActivity::class.java)
-        startActivityForResult(intent, SCAN_QR_REQUEST_CODE)
+        qrCodeLauncher.launch(intent)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SCAN_QR_REQUEST_CODE && resultCode == RESULT_OK) {
-            val scannedUrl = data?.getStringExtra("scanned_url")
+    private val qrCodeLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val scannedUrl = result.data?.getStringExtra("scanned_url")
             if (scannedUrl != null) {
                 serverUrlInput.setText(scannedUrl)
                 showStatus("✅ 已填入扫描到的服务器地址")
@@ -427,6 +535,7 @@ class LoginActivity : AppCompatActivity() {
             }
         }
     }
+
 
     // ==================== 二维码生成（手机服务器） ====================
 
@@ -512,7 +621,13 @@ class LoginActivity : AppCompatActivity() {
         ApiClient.setServerUrl(cleanUrl)
 
         loginBtn.isEnabled = false
-        loginBtn.text = "连接中..."
+        // 更新 CardView 内文字
+        val textView = loginBtn.getChildAt(0)?.let {
+            if (it is android.widget.LinearLayout) {
+                it.getChildAt(1) as? TextView
+            } else null
+        }
+        textView?.text = "连接中..."
         statusText.visibility = View.GONE
 
         ApiClient.login(name, object : ApiClient.ApiCallback {
@@ -549,7 +664,12 @@ class LoginActivity : AppCompatActivity() {
 
     private fun resetButton() {
         loginBtn.isEnabled = true
-        loginBtn.text = "进入系统"
+        val textView = loginBtn.getChildAt(0)?.let {
+            if (it is android.widget.LinearLayout) {
+                it.getChildAt(1) as? TextView
+            } else null
+        }
+        textView?.text = "进入系统"
     }
 
     private fun showStatus(msg: String) {

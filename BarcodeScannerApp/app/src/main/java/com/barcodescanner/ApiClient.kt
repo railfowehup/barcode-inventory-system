@@ -13,13 +13,14 @@ import java.util.concurrent.TimeUnit
 /**
  * HTTP API 客户端 - 与后端服务器通信
  * v3: 新增增量同步、设备管理 API
+ * Fix #8: 移除硬编码 IP，改为空字符串默认值，由调用方传入
  */
 object ApiClient {
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     private const val TIMEOUT = 10L
 
-    private var serverUrl = "http://192.168.38.62:3000"
+    private var serverUrl = ""
     private val client = OkHttpClient.Builder()
         .connectTimeout(TIMEOUT, TimeUnit.SECONDS)
         .readTimeout(TIMEOUT, TimeUnit.SECONDS)
@@ -133,6 +134,17 @@ object ApiClient {
     }
 
     // ==================== 设备心跳上报 ====================
+
+    fun sendLogout(deviceId: String, callback: ApiCallback) {
+        try {
+            val body = JSONObject().apply {
+                put("device_id", deviceId)
+            }
+            post("/api/device/logout", body.toString(), callback)
+        } catch (e: Exception) {
+            callback.onError("退出请求失败: ${e.message}")
+        }
+    }
 
     fun sendHeartbeat(deviceId: String, deviceName: String, ipAddress: String, userName: String, callback: ApiCallback) {
         try {
@@ -325,8 +337,20 @@ object ApiClient {
 
                 if (response.isSuccessful) {
                     val json = JSONObject(responseBody)
-                    mainHandler.post { callback.onSuccess(json) }
+                    // 统一解包：服务端返回 {success: true, data: {...}}
+                    // 回调拿到的 data 参数直接是 data 字段的内容
+                    val data = if (json.has("data") && !json.isNull("data")) {
+                        json.get("data")
+                    } else {
+                        json
+                    }
+                    if (data is JSONObject) {
+                        mainHandler.post { callback.onSuccess(data) }
+                    } else {
+                        mainHandler.post { callback.onSuccess(json) }
+                    }
                 } else {
+
                     var errorMsg = "请求失败: ${response.code}"
                     try {
                         val errJson = JSONObject(responseBody)

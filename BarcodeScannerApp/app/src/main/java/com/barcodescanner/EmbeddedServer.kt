@@ -197,6 +197,40 @@ class EmbeddedServer : Service() {
                             }
                         }
 
+                        // 分拣前置检查
+                        post("/api/sort/check") {
+                            try {
+                                val body = safeReceive<SortCheckRequest>(call)
+                                if (body.barcode.isNullOrEmpty()) {
+                                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "缺少条码"))
+                                    return@post
+                                }
+                                val record = dbHelper.findRecordByBarcode(body.barcode.trim())
+                                if (record == null) {
+                                    call.respond(mapOf("allowed" to false, "message" to "⚠️ 该包裹未入库，请先入库"))
+                                    return@post
+                                }
+                                val status = record["status"] as? String ?: ""
+                                val msgs = mapOf(
+                                    "分拣" to "⚠️ 该包裹已被分拣，不可重复分拣",
+                                    "出库" to "⚠️ 该包裹已出库，不可分拣",
+                                    "签收" to "⚠️ 该包裹已签收，不可分拣",
+                                    "异常" to "⚠️ 该包裹已标记异常，不可分拣"
+                                )
+                                if (msgs.containsKey(status)) {
+                                    call.respond(mapOf("allowed" to false, "message" to msgs[status]))
+                                    return@post
+                                }
+                                call.respond(mapOf("allowed" to true, "message" to "可以分拣", "record" to record))
+                            } catch (e: kotlinx.serialization.SerializationException) {
+                                Log.e(TAG, "分拣检查请求JSON解析失败", e)
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "请求格式错误"))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "分拣检查失败", e)
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "分拣检查失败")))
+                            }
+                        }
+
                         // 分拣
                         post("/api/sort") {
                             try {
@@ -250,6 +284,40 @@ class EmbeddedServer : Service() {
                             } catch (e: Exception) {
                                 Log.e(TAG, "出库失败", e)
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "出库失败")))
+                            }
+                        }
+
+                        // 签收前置检查
+                        post("/api/sign/check") {
+                            try {
+                                val body = safeReceive<SignCheckRequest>(call)
+                                if (body.barcode.isNullOrEmpty()) {
+                                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "缺少条码"))
+                                    return@post
+                                }
+                                val record = dbHelper.findRecordByBarcode(body.barcode.trim())
+                                if (record == null) {
+                                    call.respond(mapOf("allowed" to false, "message" to "⚠️ 该包裹未入库，请先入库"))
+                                    return@post
+                                }
+                                val status = record["status"] as? String ?: ""
+                                val msgs = mapOf(
+                                    "签收" to "⚠️ 该包裹已签收，不可重复签收",
+                                    "异常" to "⚠️ 该包裹已标记异常，不可签收",
+                                    "分拣" to "⚠️ 该包裹正在分拣中，不可签收",
+                                    "入库" to "⚠️ 该包裹尚未出库，不可签收"
+                                )
+                                if (msgs.containsKey(status)) {
+                                    call.respond(mapOf("allowed" to false, "message" to msgs[status]))
+                                    return@post
+                                }
+                                call.respond(mapOf("allowed" to true, "message" to "可以签收", "record" to record))
+                            } catch (e: kotlinx.serialization.SerializationException) {
+                                Log.e(TAG, "签收检查请求JSON解析失败", e)
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "请求格式错误"))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "签收检查失败", e)
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "签收检查失败")))
                             }
                         }
 

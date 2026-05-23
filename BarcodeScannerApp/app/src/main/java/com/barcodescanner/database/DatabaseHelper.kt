@@ -11,7 +11,7 @@ import org.json.JSONObject
  * 手机端 SQLite 数据库核心操作
  * 负责：建表、用户管理、记录 CRUD、统计
  */
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(
+open class DatabaseHelper(context: Context) : SQLiteOpenHelper(
     context, "barcode_server.db", null, 3
 ) {
     companion object {

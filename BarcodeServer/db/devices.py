@@ -24,6 +24,14 @@ def record_heartbeat(db: Database, device_id, device_name='', ip_address='', use
     db.conn.commit()
 
 
+def remove_heartbeat(db: Database, device_id):
+    """删除设备心跳记录（退出登录时调用）"""
+    db.conn.execute(
+        'DELETE FROM device_heartbeats WHERE device_id=?', (device_id,)
+    )
+    db.conn.commit()
+
+
 def update_group(db: Database, device_id, group):
     db.conn.execute(
         'UPDATE device_heartbeats SET device_group=? WHERE device_id=?',

@@ -12,6 +12,8 @@ import org.json.JSONObject
 /**
  * 离线记录同步管理器
  * 统一管理 ScannerActivity 和 RecordsActivity 中的离线记录存储与同步
+ *
+ * Fix #15: 增加线程安全 - 所有读写操作使用 synchronized
  */
 class SyncManager(private val context: Context) {
 
@@ -23,6 +25,7 @@ class SyncManager(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val lock = Any()
 
     // ==================== 离线记录存储 ====================
 
@@ -30,80 +33,88 @@ class SyncManager(private val context: Context) {
      * 保存一条离线入库记录
      */
     fun saveOfflineRecord(barcode: String, address: String = "", weight: Double = 0.0) {
-        try {
-            val existing = getOfflineRecords()
-            val record = JSONObject().apply {
-                put("barcode", barcode)
-                put("address", address)
-                put("weight", weight)
-                put("timestamp", System.currentTimeMillis())
-            }
-            existing.put(record)
-            prefs.edit().putString(KEY_OFFLINE_RECORDS, existing.toString()).apply()
-        } catch (_: Exception) {}
+        synchronized(lock) {
+            try {
+                val existing = getOfflineRecords()
+                val record = JSONObject().apply {
+                    put("barcode", barcode)
+                    put("address", address)
+                    put("weight", weight)
+                    put("timestamp", System.currentTimeMillis())
+                }
+                existing.put(record)
+                prefs.edit().putString(KEY_OFFLINE_RECORDS, existing.toString()).apply()
+            } catch (_: Exception) {}
+        }
     }
 
     /**
      * 获取所有离线记录
      */
     fun getOfflineRecords(): JSONArray {
-        return try {
-            val raw = prefs.getString(KEY_OFFLINE_RECORDS, "[]") ?: "[]"
-            JSONArray(raw)
-        } catch (_: Exception) {
-            JSONArray()
+        synchronized(lock) {
+            return try {
+                val raw = prefs.getString(KEY_OFFLINE_RECORDS, "[]") ?: "[]"
+                JSONArray(raw)
+            } catch (_: Exception) {
+                JSONArray()
+            }
         }
     }
 
     /**
      * 获取离线记录数量
      */
-    fun getOfflineRecordCount(): Int = getOfflineRecords().length()
+    fun getOfflineRecordCount(): Int = synchronized(lock) { getOfflineRecords().length() }
 
     /**
      * 保存一条离线操作（分拣、出库、签收等）
      */
     fun saveOfflineOperation(operation: String, barcode: String, extra: Map<String, Any> = emptyMap()) {
-        try {
-            val existing = getOfflineOperations()
-            val record = JSONObject().apply {
-                put("operation", operation)
-                put("barcode", barcode)
-                put("timestamp", System.currentTimeMillis())
-                extra.forEach { (k, v) ->
-                    when (v) {
-                        is String -> put(k, v)
-                        is Number -> put(k, v.toDouble())
-                        is Boolean -> put(k, v)
+        synchronized(lock) {
+            try {
+                val existing = getOfflineOperations()
+                val record = JSONObject().apply {
+                    put("operation", operation)
+                    put("barcode", barcode)
+                    put("timestamp", System.currentTimeMillis())
+                    extra.forEach { (k, v) ->
+                        when (v) {
+                            is String -> put(k, v)
+                            is Number -> put(k, v.toDouble())
+                            is Boolean -> put(k, v)
+                        }
                     }
                 }
-            }
-            existing.put(record)
-            prefs.edit().putString(KEY_OFFLINE_OPERATIONS, existing.toString()).apply()
-        } catch (_: Exception) {}
+                existing.put(record)
+                prefs.edit().putString(KEY_OFFLINE_OPERATIONS, existing.toString()).apply()
+            } catch (_: Exception) {}
+        }
     }
 
     /**
      * 获取所有离线操作
      */
     fun getOfflineOperations(): JSONArray {
-        return try {
-            val raw = prefs.getString(KEY_OFFLINE_OPERATIONS, "[]") ?: "[]"
-            JSONArray(raw)
-        } catch (_: Exception) {
-            JSONArray()
+        synchronized(lock) {
+            return try {
+                val raw = prefs.getString(KEY_OFFLINE_OPERATIONS, "[]") ?: "[]"
+                JSONArray(raw)
+            } catch (_: Exception) {
+                JSONArray()
+            }
         }
     }
 
     /**
      * 获取离线操作数量
      */
-    fun getOfflineOperationCount(): Int = getOfflineOperations().length()
+    fun getOfflineOperationCount(): Int = synchronized(lock) { getOfflineOperations().length() }
 
     /**
      * 获取总离线数量
      */
-    fun getTotalOfflineCount(): Int = getOfflineRecordCount() + getOfflineOperationCount()
+    fun getTotalOfflineCount(): Int = synchronized(lock) { getOfflineRecordCount() + getOfflineOperationCount() }
 
     // ==================== 同步 ====================
 
@@ -117,7 +128,7 @@ class SyncManager(private val context: Context) {
         var failCount = 0
 
         // 同步离线入库记录
-        val records = getOfflineRecords()
+        val records = synchronized(lock) { getOfflineRecords() }
         if (records.length() > 0) {
             val recordList = mutableListOf<JSONObject>()
             for (i in 0 until records.length()) {
@@ -126,12 +137,14 @@ class SyncManager(private val context: Context) {
 
             ApiClient.syncOfflineRecords(recordList, userId, object : ApiClient.ApiCallback {
                 override fun onSuccess(data: JSONObject?) {
-                    successCount += recordList.size
-                    prefs.edit().remove(KEY_OFFLINE_RECORDS).apply()
+                    synchronized(lock) {
+                        successCount += recordList.size
+                        prefs.edit().remove(KEY_OFFLINE_RECORDS).apply()
+                    }
                     syncOperations(userId, successCount, failCount, onComplete)
                 }
                 override fun onError(error: String?) {
-                    failCount += recordList.size
+                    synchronized(lock) { failCount += recordList.size }
                     syncOperations(userId, successCount, failCount, onComplete)
                 }
             })
@@ -144,7 +157,7 @@ class SyncManager(private val context: Context) {
         userId: Int, successCount: Int, failCount: Int,
         onComplete: ((Int, Int) -> Unit)?
     ) {
-        val operations = getOfflineOperations()
+        val operations = synchronized(lock) { getOfflineOperations() }
         if (operations.length() == 0) {
             onComplete?.invoke(successCount, failCount)
             return
@@ -161,17 +174,21 @@ class SyncManager(private val context: Context) {
 
             val callback = object : ApiClient.ApiCallback {
                 override fun onSuccess(data: JSONObject?) {
-                    opsSuccess++
-                    checkDone()
+                    synchronized(this) {
+                        opsSuccess++
+                        checkDone()
+                    }
                 }
                 override fun onError(error: String?) {
-                    opsFail++
-                    checkDone()
+                    synchronized(this) {
+                        opsFail++
+                        checkDone()
+                    }
                 }
                 private fun checkDone() {
                     completed++
                     if (completed >= operations.length()) {
-                        prefs.edit().remove(KEY_OFFLINE_OPERATIONS).apply()
+                        synchronized(lock) { prefs.edit().remove(KEY_OFFLINE_OPERATIONS).apply() }
                         onComplete?.invoke(opsSuccess, opsFail)
                     }
                 }
@@ -190,10 +207,12 @@ class SyncManager(private val context: Context) {
                     ApiClient.signBarcode(barcode, userId, signer, exceptionType, callback)
                 }
                 else -> {
-                    completed++
-                    if (completed >= operations.length()) {
-                        prefs.edit().remove(KEY_OFFLINE_OPERATIONS).apply()
-                        onComplete?.invoke(opsSuccess, opsFail)
+                    synchronized(this) {
+                        completed++
+                        if (completed >= operations.length()) {
+                            synchronized(lock) { prefs.edit().remove(KEY_OFFLINE_OPERATIONS).apply() }
+                            onComplete?.invoke(opsSuccess, opsFail)
+                        }
                     }
                 }
             }
@@ -204,9 +223,11 @@ class SyncManager(private val context: Context) {
      * 清除所有离线数据
      */
     fun clearAll() {
-        prefs.edit()
-            .remove(KEY_OFFLINE_RECORDS)
-            .remove(KEY_OFFLINE_OPERATIONS)
-            .apply()
+        synchronized(lock) {
+            prefs.edit()
+                .remove(KEY_OFFLINE_RECORDS)
+                .remove(KEY_OFFLINE_OPERATIONS)
+                .apply()
+        }
     }
 }

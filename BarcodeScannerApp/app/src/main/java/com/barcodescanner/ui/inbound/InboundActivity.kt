@@ -11,7 +11,7 @@ import android.widget.Toast
 import androidx.cardview.widget.CardView
 import com.barcodescanner.R
 import com.barcodescanner.base.BaseScannerActivity
-import com.barcodescanner.network.ApiClient
+import com.barcodescanner.ApiClient
 import com.barcodescanner.ui.theme.AppTheme
 import com.barcodescanner.utils.WeightCalculator
 import org.json.JSONObject

@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -14,17 +16,19 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.barcodescanner.EmbeddedDatabase
 import com.barcodescanner.EmbeddedServer
 import com.barcodescanner.LoginActivity
 import com.barcodescanner.R
 import com.barcodescanner.RecordsActivity
-import com.barcodescanner.network.ApiClient
+import com.barcodescanner.ApiClient
 import com.barcodescanner.network.ServerConfig
 import com.barcodescanner.ui.changeaddress.ChangeAddressActivity
 import com.barcodescanner.ui.inbound.InboundActivity
 import com.barcodescanner.ui.sign.SignActivity
 import com.barcodescanner.ui.sort.SortActivity
 import com.barcodescanner.ui.ship.ShipActivity
+import com.barcodescanner.utils.NetworkUtils
 import org.json.JSONObject
 
 /**
@@ -41,7 +45,6 @@ class MainMenuActivity : AppCompatActivity() {
     private lateinit var cardSign: CardView
     private lateinit var cardChangeAddress: CardView
     private lateinit var cardRecords: CardView
-    private lateinit var btnStartServer: TextView
     private lateinit var btnSync: TextView
     private lateinit var btnBackup: TextView
     private lateinit var btnLogout: TextView
@@ -50,6 +53,11 @@ class MainMenuActivity : AppCompatActivity() {
     private var userName = ""
     private var isOffline = false
     private var deviceId = ""
+
+    // ==================== 心跳上报 ====================
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val heartbeatInterval = 60000L
+    private var isHeartbeatRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,7 +70,45 @@ class MainMenuActivity : AppCompatActivity() {
 
         initViews()
         setupClickListeners()
+
+        // 启动心跳（非离线模式）
+        if (!isOffline && userId > 0) {
+            startHeartbeat()
+        }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopHeartbeat()
+    }
+
+    // ==================== 心跳上报 ====================
+
+    private fun startHeartbeat() {
+        isHeartbeatRunning = true
+        doHeartbeat()
+    }
+
+    private fun doHeartbeat() {
+        if (!isHeartbeatRunning) return
+
+        val ipAddress = NetworkUtils.getLocalIpAddress()
+        val deviceName = NetworkUtils.getDeviceName()
+
+        ApiClient.sendHeartbeat(deviceId, deviceName, ipAddress, userName, object : ApiClient.ApiCallback {
+            override fun onSuccess(data: org.json.JSONObject?) {}
+            override fun onError(error: String?) {}
+        })
+
+        heartbeatHandler.postDelayed({ doHeartbeat() }, heartbeatInterval)
+    }
+
+    private fun stopHeartbeat() {
+        isHeartbeatRunning = false
+        heartbeatHandler.removeCallbacksAndMessages(null)
+    }
+
+    // ==================== UI 初始化 ====================
 
     private fun initViews() {
         userNameDisplay = findViewById(R.id.userNameDisplay)
@@ -73,7 +119,6 @@ class MainMenuActivity : AppCompatActivity() {
         cardSign = findViewById(R.id.cardSign)
         cardChangeAddress = findViewById(R.id.cardChangeAddress)
         cardRecords = findViewById(R.id.cardRecords)
-        btnStartServer = findViewById(R.id.btnStartServer)
         btnSync = findViewById(R.id.btnSync)
         btnBackup = findViewById(R.id.btnBackup)
         btnLogout = findViewById(R.id.btnLogout)
@@ -151,46 +196,18 @@ class MainMenuActivity : AppCompatActivity() {
             })
         }
 
-        btnStartServer.setOnClickListener { startServer() }
         btnSync.setOnClickListener { showSyncDialog() }
         btnBackup.setOnClickListener { showBackupDialog() }
         btnLogout.setOnClickListener {
+            // 通知服务器设备已离线
+            ApiClient.sendLogout(deviceId, object : ApiClient.ApiCallback {
+                override fun onSuccess(data: org.json.JSONObject?) {}
+                override fun onError(error: String?) {}
+            })
             ServerConfig.clearAll()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
         }
-    }
-
-    // ==================== 服务器 ====================
-
-    private fun startServer() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 200)
-                return
-            }
-        }
-
-        val intent = Intent(this, EmbeddedServer::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-
-        btnStartServer.text = "⏳ 启动中..."
-        btnStartServer.isEnabled = false
-
-        android.os.Handler(mainLooper).postDelayed({
-            if (EmbeddedServer.isServerRunning()) {
-                btnStartServer.text = "✅ 服务器运行中"
-            } else {
-                btnStartServer.text = "📡 服务器"
-                btnStartServer.isEnabled = true
-                Toast.makeText(this, "服务器启动失败", Toast.LENGTH_SHORT).show()
-            }
-        }, 2000)
     }
 
     // ==================== 同步 ====================
@@ -209,57 +226,118 @@ class MainMenuActivity : AppCompatActivity() {
     }
 
     private fun syncToServer() {
-        val serverUrl = ServerConfig.getServerUrl()
-        if (serverUrl.isEmpty()) {
-            Toast.makeText(this, "请先在登录页设置服务器地址", Toast.LENGTH_SHORT).show()
-            return
-        }
-        ApiClient.setServerUrl(serverUrl)
+        ApiClient.setServerUrl(ServerConfig.getServerUrl())
+        Toast.makeText(this, "正在上传本机数据...", Toast.LENGTH_SHORT).show()
 
-        if (!EmbeddedServer.isServerRunning()) {
-            Toast.makeText(this, "请先启动本机服务器", Toast.LENGTH_SHORT).show()
-            return
-        }
+        // 从本机 SQLite 读取所有记录，上传到远程服务器
+        Thread {
+            try {
+                val db = EmbeddedDatabase(this)
+                val localRecords = db.getAllRecords()
+                val localUsers = db.getAllUsers()
 
-        Toast.makeText(this, "正在上传数据...", Toast.LENGTH_SHORT).show()
+                val usersArr = org.json.JSONArray()
+                for (u in localUsers) {
+                    val obj = org.json.JSONObject()
+                    obj.put("id", u["id"] as? Int ?: 0)
+                    obj.put("name", u["name"] as? String ?: "")
+                    obj.put("theme_color", u["theme_color"] as? String ?: "#2196F3")
+                    obj.put("role", u["role"] as? String ?: "operator")
+                    usersArr.put(obj)
+                }
+
+                val recordsArr = org.json.JSONArray()
+                for (r in localRecords) {
+                    val obj = org.json.JSONObject()
+                    for ((key, value) in r) {
+                        @Suppress("UNCHECKED_CAST")
+                        val v: Any? = value
+                        when (v) {
+                            is Int -> obj.put(key, v)
+                            is Long -> obj.put(key, v)
+                            is Double -> obj.put(key, v)
+                            is Boolean -> obj.put(key, v)
+                            else -> obj.put(key, v?.toString() ?: "")
+                        }
+                    }
+                    recordsArr.put(obj)
+                }
+
+                ApiClient.mergeToServer(usersArr, recordsArr, deviceId, userName, object : ApiClient.ApiCallback {
+                    override fun onSuccess(data: org.json.JSONObject?) {
+                        val added = data?.optInt("added", 0) ?: 0
+                        val skipped = data?.optInt("skipped", 0) ?: 0
+                        runOnUiThread {
+                            Toast.makeText(this@MainMenuActivity, "✅ 上传完成（新增 $added，跳过 $skipped）", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    override fun onError(error: String?) {
+                        runOnUiThread { Toast.makeText(this@MainMenuActivity, "上传失败: $error", Toast.LENGTH_SHORT).show() }
+                    }
+                })
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this@MainMenuActivity, "读取本机数据失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+            }
+        }.start()
+    }
+
+    private fun pullFromServer() {
+        ApiClient.setServerUrl(ServerConfig.getServerUrl())
+        Toast.makeText(this, "正在拉取数据到本机...", Toast.LENGTH_SHORT).show()
 
         ApiClient.pullFromServer("all", null, object : ApiClient.ApiCallback {
             override fun onSuccess(data: org.json.JSONObject?) {
                 try {
-                    val users = data?.optJSONArray("users") ?: org.json.JSONArray()
                     val records = data?.optJSONArray("records") ?: org.json.JSONArray()
-                    ApiClient.mergeToServer(users, records, deviceId, userName, object : ApiClient.ApiCallback {
-                        override fun onSuccess(data: org.json.JSONObject?) {
-                            runOnUiThread { Toast.makeText(this@MainMenuActivity, "✅ 同步完成", Toast.LENGTH_SHORT).show() }
+                    val users = data?.optJSONArray("users") ?: org.json.JSONArray()
+
+                    // 保存到本机 SQLite
+                    Thread {
+                        try {
+                            val db = EmbeddedDatabase(this@MainMenuActivity)
+                            var added = 0
+                            var skipped = 0
+
+                            // 先保存用户
+                            for (i in 0 until users.length()) {
+                                val u = users.getJSONObject(i)
+                                val name = u.optString("name", "")
+                                if (name.isNotEmpty()) {
+                                    db.loginUser(name)
+                                }
+                            }
+
+                            // 再保存记录
+                            for (i in 0 until records.length()) {
+                                val r = records.getJSONObject(i)
+                                val barcode = r.optString("barcode", "")
+                                if (barcode.isEmpty()) continue
+
+                                val existing = db.findRecordByBarcode(barcode)
+                                if (existing == null) {
+                                    val userId = r.optInt("user_id", 0)
+                                    val address = r.optString("address", "")
+                                    val weight = r.optDouble("weight", 0.0)
+                                    val note = r.optString("note", "")
+                                    db.insertRecord(barcode, userId, address, weight, note)
+                                    added++
+                                } else {
+                                    skipped++
+                                }
+                            }
+
+                            val finalAdded = added
+                            val finalSkipped = skipped
+                            runOnUiThread {
+                                Toast.makeText(this@MainMenuActivity, "✅ 拉取完成（新增 $finalAdded，跳过 $finalSkipped）", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread { Toast.makeText(this@MainMenuActivity, "保存到本机失败: ${e.message}", Toast.LENGTH_SHORT).show() }
                         }
-                        override fun onError(error: String?) {
-                            runOnUiThread { Toast.makeText(this@MainMenuActivity, "同步失败: $error", Toast.LENGTH_SHORT).show() }
-                        }
-                    })
+                    }.start()
                 } catch (e: Exception) {
-                    runOnUiThread { Toast.makeText(this@MainMenuActivity, "解析失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                    runOnUiThread { Toast.makeText(this@MainMenuActivity, "解析数据失败: ${e.message}", Toast.LENGTH_SHORT).show() }
                 }
-            }
-            override fun onError(error: String?) {
-                runOnUiThread { Toast.makeText(this@MainMenuActivity, "拉取失败: $error", Toast.LENGTH_SHORT).show() }
-            }
-        })
-    }
-
-    private fun pullFromServer() {
-        val serverUrl = ServerConfig.getServerUrl()
-        if (serverUrl.isEmpty()) {
-            Toast.makeText(this, "请先在登录页设置服务器地址", Toast.LENGTH_SHORT).show()
-            return
-        }
-        ApiClient.setServerUrl(serverUrl)
-
-        Toast.makeText(this, "正在拉取数据...", Toast.LENGTH_SHORT).show()
-
-        ApiClient.pullFromServer("all", null, object : ApiClient.ApiCallback {
-            override fun onSuccess(data: org.json.JSONObject?) {
-                val total = data?.optInt("total_records", 0) ?: 0
-                runOnUiThread { Toast.makeText(this@MainMenuActivity, "✅ 拉取完成，共 $total 条记录", Toast.LENGTH_SHORT).show() }
             }
             override fun onError(error: String?) {
                 runOnUiThread { Toast.makeText(this@MainMenuActivity, "拉取失败: $error", Toast.LENGTH_SHORT).show() }
@@ -283,13 +361,7 @@ class MainMenuActivity : AppCompatActivity() {
     }
 
     private fun performBackup() {
-        val serverUrl = ServerConfig.getServerUrl()
-        if (serverUrl.isEmpty()) {
-            Toast.makeText(this, "请先设置服务器地址", Toast.LENGTH_SHORT).show()
-            return
-        }
-        ApiClient.setServerUrl(serverUrl)
-
+        ApiClient.setServerUrl(ServerConfig.getServerUrl())
         Toast.makeText(this, "正在备份...", Toast.LENGTH_SHORT).show()
 
         ApiClient.backup(object : ApiClient.ApiCallback {
@@ -325,13 +397,7 @@ class MainMenuActivity : AppCompatActivity() {
     }
 
     private fun performRestore(backupData: String) {
-        val serverUrl = ServerConfig.getServerUrl()
-        if (serverUrl.isEmpty()) {
-            Toast.makeText(this, "请先设置服务器地址", Toast.LENGTH_SHORT).show()
-            return
-        }
-        ApiClient.setServerUrl(serverUrl)
-
+        ApiClient.setServerUrl(ServerConfig.getServerUrl())
         Toast.makeText(this, "正在恢复...", Toast.LENGTH_SHORT).show()
 
         try {

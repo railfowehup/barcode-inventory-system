@@ -7,7 +7,7 @@ import android.view.View
 import android.widget.TextView
 import com.barcodescanner.R
 import com.barcodescanner.base.BaseScannerActivity
-import com.barcodescanner.network.ApiClient
+import com.barcodescanner.ApiClient
 import org.json.JSONObject
 
 /**

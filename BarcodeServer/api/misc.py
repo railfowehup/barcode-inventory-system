@@ -5,7 +5,10 @@ import base64
 from datetime import datetime
 
 from flask import request, jsonify
-from . import app, db, get_local_ip, PORT
+
+from . import app, db, get_local_ip, PORT, ok_response, err_response
+from db import backup as db_backup
+
 
 
 @app.route('/api/health', methods=['GET'])
@@ -24,10 +27,10 @@ def api_qrcode():
         img.save(buffer, format='PNG')
         img_base64 = base64.b64encode(buffer.getvalue()).decode()
         data_url = f'data:image/png;base64,{img_base64}'
-        return jsonify({
-            'success': True,
+        return ok_response({
             'url': server_url,
             'qrcode': data_url
         })
     except Exception as e:
-        return jsonify({'error': f'二维码生成失败: {str(e)}'}), 500
+        return err_response(f'二维码生成失败: {str(e)}', 'ERR_QR_FAILED', 500)
+

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """用户认证相关 API"""
 from flask import request, jsonify
-from . import app, db
+from . import app, db, ok_response, err_response
 from db import users as db_users
 
 
@@ -9,12 +9,16 @@ from db import users as db_users
 def api_login():
     data = request.get_json()
     if not data or not data.get('name'):
-        return jsonify({'error': '请输入姓名'}), 400
+        return err_response('请输入姓名', 'ERR_MISSING_PARAM', 400)
     user = db_users.login_user(db, data['name'])
-    return jsonify(user)
+    if user is None:
+        return err_response('登录失败', 'ERR_INTERNAL', 500)
+    if isinstance(user, dict) and 'error' in user:
+        return err_response(user['error'], 'ERR_INTERNAL', 500)
+    return ok_response(user)
 
 
 @app.route('/api/users', methods=['GET'])
 def api_users():
     users = db_users.get_all_users(db)
-    return jsonify(users)
+    return ok_response({'users': users})

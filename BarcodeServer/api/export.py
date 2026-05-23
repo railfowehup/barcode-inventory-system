@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 
 from flask import request, jsonify, send_file
-from . import app, db, EXPORT_DIR
+from . import app, db, EXPORT_DIR, ok_response, err_response
 from db import records as db_records
 from db import backup as db_backup
 
@@ -83,14 +83,13 @@ def api_backup():
 def api_restore():
     data = request.get_json()
     if not data or not data.get('data'):
-        return jsonify({'error': '备份数据格式错误'}), 400
+        return err_response('备份数据格式错误', 'ERR_INVALID_DATA', 400)
 
     try:
         users_restored, records_restored = db_backup.restore(db, data['data'])
-        return jsonify({
-            'success': True,
+        return ok_response({
             'users_restored': users_restored,
             'records_restored': records_restored
         })
     except Exception as e:
-        return jsonify({'error': f'恢复失败: {str(e)}'}), 500
+        return err_response(f'恢复失败: {str(e)}', 'ERR_DB_ERROR', 500)

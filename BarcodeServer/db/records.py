@@ -186,11 +186,11 @@ def get_stats(db: Database, user_id=None):
     ''', daily_params).fetchall()
 
     # 地址分布
-    address_where = 'WHERE user_id=?' if user_id else 'WHERE'
-    address_params = [user_id] if user_id else []
+    address_where = 'WHERE user_id=? AND address!=?' if user_id else 'WHERE address!=?'
+    address_params = [user_id, ''] if user_id else ['']
     address_rows = db.conn.execute(f'''
         SELECT address, COUNT(*) as count
-        FROM records {address_where} address!=''
+        FROM records {address_where}
         GROUP BY address ORDER BY count DESC
     ''', address_params).fetchall()
 

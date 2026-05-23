@@ -138,3 +138,20 @@ data class DeviceGroupRequest(
     val device_id: String? = null,
     val group: String? = null
 )
+
+@Serializable
+data class SortCheckRequest(
+    val barcode: String? = null
+)
+
+@Serializable
+data class SignCheckRequest(
+    val barcode: String? = null
+)
+
+@Serializable
+data class CheckResponse(
+    val allowed: Boolean = false,
+    val message: String = "",
+    val record: Map<String, Any?>? = null
+)

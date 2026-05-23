@@ -6,13 +6,30 @@
 import os
 import sys
 import socket
+import json
+import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORT_DIR = os.path.join(BASE_DIR, 'exports')
-SERVER_PORT = 3000
+SERVER_PORT = int(os.environ.get('BARCODE_SERVER_PORT', 3000))
+
+
+def api_get(path, timeout=3):
+    """调用 API 并自动解包 data 字段，返回 (data_dict, error_str)"""
+    try:
+        resp = urllib.request.urlopen(
+            f'http://127.0.0.1:{SERVER_PORT}{path}', timeout=timeout
+        )
+        body = json.loads(resp.read().decode())
+        if body.get('success'):
+            return body.get('data'), None
+        return None, body.get('error', '未知错误')
+    except Exception as e:
+        return None, str(e)
 
 
 def get_local_ips():
+
     """获取本机局域网 IPv4 地址"""
     ips = []
     try:
